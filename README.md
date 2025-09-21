@@ -1,2 +1,2 @@
 # Health-analytics-
-Created an health analytics solution for predicting obesity risk
+Created an health analytics solution for predicting obesity risk. Built a trained predictive system to classify new individuals into obesity risk groups. Used R for this and started with cleaning, transforming the raw dataset taken from kaggle. Performed K means clustering to group individuals by obesity risk profile. Used models such as Random Forest(RF), GBM, and SVM getting more than 86 percent accuracy in RF. Also performed Feature importance analysis to highlight lifestyle factors most linked to obesity. Finally performed Validation using reports with confusion matrices and Kappa scores.
