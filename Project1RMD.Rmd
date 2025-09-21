@@ -1,0 +1,373 @@
+---
+title: "Project 1"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+data <- read.csv("ObesityDataSet.csv")
+```
+
+```{r}
+head(data)
+```
+
+
+```{r}
+str(data)
+```
+
+
+
+```{r}
+summary(data)
+```
+## Data Cleaning and EDA
+
+```{r}
+cat_cols <- c("Gender", "family_history_with_overweight", "FAVC", "CAEC", "SMOKE",
+              "SCC", "CALC", "MTRANS", "NObeyesdad")
+data[cat_cols] <-lapply(data[cat_cols], factor)
+
+missing_values_check <- colSums(is.na(data))
+print(missing_values_check)
+```
+
+
+### Outlier Detection and Scaling
+
+```{r}
+num_cols <- c("Age", "Height", "Weight", "FCVC", "NCP", "CH2O", "FAF", "TUE")
+
+par(mfrow = c(2, 4))
+for (col in num_cols) {
+  boxplot(data[[col]], main = col, ylab = "Value")
+}
+par(mfrow = c(1, 1))
+```
+
+
+
+```{r}
+data[num_cols] <- scale(data[num_cols])
+summary(data[num_cols])
+```
+
+
+## K-means clustering
+
+```{r}
+scaled_num_col_data <- data[num_cols]
+
+wss <- (nrow(scaled_num_col_data) - 1) * sum(apply(scaled_num_col_data, 2, var))
+for (i in 2:15) {
+  wss[i] <- sum(kmeans(scaled_num_col_data, centers =i)$withinss)
+}
+
+plot(1:15, wss, type = "b", xlab = "Clusters", ylab = "Within Cluster sum of squares")
+
+```
+
+
+```{r}
+set.seed(123)
+
+k <- 4
+kmeans_res <- kmeans(scaled_num_col_data, centers = k)
+
+data$cluster <- as.factor(kmeans_res$cluster)
+
+table(data$cluster)
+```
+
+
+```{r}
+pca_data <- data[, num_cols]
+pca_data <- scale(pca_data)
+
+pca_result <- prcomp(pca_data)
+
+pca_plot_data <- as.data.frame(pca_result$x[, 1:2])
+pca_plot_data$cluster <- as.factor(kmeans_res$cluster)
+
+pca_centers <- prcomp(kmeans_res$centers)$x[, 1:2]
+
+ggplot(pca_plot_data, aes(x = PC1, y = PC2, color = cluster)) +
+  geom_point() +
+  labs(
+    title = "K-Means Clustering Visualized with PCA",
+    x = "Principal Component 1",
+    y = "Principal Component 2",
+    color = "Cluster"
+  ) + theme_minimal() +
+  geom_point(data = as.data.frame(pca_centers),
+             aes(x = PC1, y = PC2),
+             color = "black",
+             size = 3,
+             shape = 16)
+```
+
+### Cluster Interpretation
+
+```{r}
+library(dplyr)
+cluster_summary <- data %>%
+  group_by(cluster) %>%
+  summarise_all(mean)
+
+print(cluster_summary)
+```
+
+
+
+```{r}
+num_cols <- c("Age", "Height", "Weight", "FCVC", "NCP", "CH2O", "FAF", "TUE")
+
+par(mfrow = c(2, 4))
+for (col in num_cols) {
+  boxplot(data[[col]] ~ data$cluster, main = col, ylab = "Value", xlab = "Cluster")
+}
+par(mfrow = c(1, 1))
+```
+
+
+
+```{r}
+cat_cols <- c("Gender", "family_history_with_overweight", "FAVC", "CAEC", "SMOKE", 
+              "SCC", "CALC", "MTRANS", "NObeyesdad")
+
+par(mfrow = c(3, 3))
+for (col in cat_cols) {
+  counts <- table(data$cluster, data[[col]])
+  barplot(counts, beside = TRUE, main = col, legend.text = colnames(counts), 
+          xlab = "Cluster")
+}
+par(mfrow = c(1, 1))
+```
+
+
+
+
+
+### Feature Importance (using Random Forest)
+
+```{r}
+library(randomForest)
+
+data$cluster <- as.factor(data$cluster)
+randomforest_data <- data[, c(num_cols, cat_cols, "cluster")]
+```
+
+
+
+```{r}
+randomforest_model <- randomForest(cluster ~ ., data = randomforest_data, importance = TRUE)
+
+imp_scores <- importance(randomforest_model)
+
+```
+
+
+
+```{r}
+varImpPlot(randomforest_model)
+
+```
+
+
+
+```{r}
+print(imp_scores)
+```
+
+
+
+## Predictive Modeling (Random Forest Classifier)
+
+```{r}
+library(caret)
+```
+
+
+
+```{r}
+data$cluster <- as.factor(data$cluster)
+randomforest_data <- data[, c("TUE", "Age", "Weight", "Height", "FAF", "FCVC", 
+                              "NObeyesdad", "cluster")]
+
+```
+
+
+
+```{r}
+set.seed(123)
+train_index <- createDataPartition(randomforest_data$cluster, p = 0.8, list = FALSE)
+train_data <- randomforest_data[train_index, ]
+test_data <- randomforest_data[-train_index, ]
+```
+
+
+
+```{r}
+set.seed(123)
+randomforest_model <- randomForest(cluster ~ ., data = train_data)
+
+predictions <- predict(randomforest_model, newdata = test_data)
+
+```
+
+
+
+```{r}
+confusionMatrix(predictions, test_data$cluster)
+```
+
+
+## Predictive Modeling (Gradient Boosting Machine)
+
+```{r}
+library(gbm)
+```
+
+
+
+```{r}
+data$cluster <- as.factor(data$cluster)
+gbm_data <- data[, c("TUE", "Age", "Weight", "Height", "FAF", "FCVC", "NObeyesdad", 
+                     "cluster")]
+
+set.seed(123)
+train_index <- createDataPartition(gbm_data$cluster, p = 0.8, list = FALSE)
+train_data <- gbm_data[train_index, ]
+test_data <- gbm_data[-train_index, ]
+
+
+```
+
+
+
+```{r}
+set.seed(123)
+gbm_model <- train(
+  cluster ~ .,
+  data = train_data,
+  method = "gbm",
+  trControl = trainControl(method = "cv", number = 10),
+  verbose = FALSE
+)
+```
+
+
+
+```{r}
+set.seed(123)
+predictions <- predict(gbm_model, newdata = test_data)
+
+confusionMatrix(predictions, test_data$cluster)
+```
+
+
+## Predictive Modeling (Support Vector Machine)
+```{r}
+library(e1071)
+
+data$cluster <- as.factor(data$cluster)
+svm_data <- data[, c("TUE", "Age", "Weight", "Height", "FAF", "FCVC", "NObeyesdad", 
+                     "cluster")]
+
+set.seed(123)
+train_index <- createDataPartition(svm_data$cluster, p = 0.8, list = FALSE)
+train_data <- svm_data[train_index, ]
+test_data <- svm_data[-train_index, ]
+
+
+```
+
+
+
+```{r}
+svm_model <- train(
+  cluster ~ .,
+  data = train_data,
+  method = "svmLinear",
+  trControl = trainControl(method = "cv", number = 10),
+  preProcess = c("center", "scale")
+)
+
+```
+
+
+
+```{r}
+predictions <- predict(svm_model, newdata = test_data)
+
+confusionMatrix(predictions, test_data$cluster)
+```
+
+
+## Hyperparameter Tuning for Random Forest
+
+```{r}
+data$cluster <- as.factor(data$cluster)
+randomforest_data <- data[, c("TUE", "Age", "Weight", "Height", "FAF", "FCVC", 
+                              "NObeyesdad", "cluster")]
+
+set.seed(123)
+train_index <- createDataPartition(randomforest_data$cluster, p = 0.8, list = FALSE)
+train_data <- randomforest_data[train_index, ]
+test_data <- randomforest_data[-train_index, ]
+
+randomforest_grid <- expand.grid(mtry = c(2, 3, 4, 5, 6, 7))
+
+```
+
+
+
+```{r}
+rf_tuned_model <- train(
+  cluster ~ .,
+  data = train_data,
+  method = "rf",
+  trControl = trainControl(method = "cv", number = 10),
+  tuneGrid = randomforest_grid
+)
+
+```
+
+
+
+```{r}
+predictions <- predict(rf_tuned_model, newdata = test_data)
+
+confusionMatrix(predictions, test_data$cluster)
+
+print(rf_tuned_model$bestTune)
+
+```
+
+
+
+```{r}
+library(ggplot2)
+
+important_features <- c("TUE", "Age", "Weight", "Height", "FAF", "FCVC", "NObeyesdad")
+
+pairs(data[, c(important_features, "cluster")], col = data$cluster)
+
+```
+
+
+
+```{r}
+
+```
+
+
+
